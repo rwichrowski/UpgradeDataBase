@@ -107,15 +107,27 @@ public class SqlExecutor {
 
             } catch (SQLException ex) {
 
-                if (isMissingObjectError(ex) && containsAlter(sql)) {
+                if (shouldRetryWithOppositeKeyword(ex) && containsAlter(sql)) {
 
+                    // Obiekt nie istnieje → spróbuj CREATE
                     String createSql = replaceAlterWithCreate(sql);
-
                     try {
                         stmt.execute(createSql);
                         System.out.printf("OK  | %s | %s (ALTER->CREATE)%n",
                                 target.getEnv(), scriptFile.getName());
+                    } catch (SQLException ex2) {
+                        System.out.printf("ERR | %s | %s | %s%n",
+                                target.getEnv(), scriptFile.getName(), ex2.getMessage());
+                    }
 
+                } else if (shouldRetryWithOppositeKeyword(ex) && containsCreate(sql)) {
+
+                    // Obiekt już istnieje → spróbuj ALTER
+                    String alterSql = replaceCreateWithAlter(sql);
+                    try {
+                        stmt.execute(alterSql);
+                        System.out.printf("OK  | %s | %s (CREATE->ALTER)%n",
+                                target.getEnv(), scriptFile.getName());
                     } catch (SQLException ex2) {
                         System.out.printf("ERR | %s | %s | %s%n",
                                 target.getEnv(), scriptFile.getName(), ex2.getMessage());
@@ -132,8 +144,6 @@ public class SqlExecutor {
                     target.getEnv(), scriptFile.getName(), e.getMessage());
         }
     }
-
-
 
     public static void main(String[] args) {
         String scriptsPathsFile = "scripts_paths.txt";
@@ -162,7 +172,6 @@ public class SqlExecutor {
         System.out.println("\nDone.");
     }
 
-
     private static String normalizeSql(String sql) {
         String upper = sql.toUpperCase();
 
@@ -170,7 +179,9 @@ public class SqlExecutor {
                 upper.indexOf("ALTER PROCEDURE"),
                 upper.indexOf("CREATE PROCEDURE"),
                 upper.indexOf("CREATE FUNCTION"),
-                upper.indexOf("ALTER FUNCTION")
+                upper.indexOf("ALTER FUNCTION"),
+                upper.indexOf("ALTER TRIGGER"),
+                upper.indexOf("CREATE TRIGGER")
         };
 
         int minIndex = Integer.MAX_VALUE;
@@ -190,24 +201,39 @@ public class SqlExecutor {
         return sql;
     }
 
-    private static boolean isMissingObjectError(SQLException ex) {
+    private static boolean shouldRetryWithOppositeKeyword(SQLException ex) {
         int errorCode = ex.getErrorCode();
-
-        // SQL Server
-        return errorCode == 208     // Invalid object name
-                || errorCode == 15151; // Cannot find the object
+        return errorCode == 208      // Invalid object name (brak obiektu → użyj CREATE)
+                || errorCode == 15151  // Cannot find the object (brak obiektu → użyj CREATE)
+                || errorCode == 4902   // Cannot find the object - trigger (brak obiektu → użyj CREATE)
+                || errorCode == 2714;  // There is already an object named '...' (istnieje → użyj ALTER)
     }
 
     private static boolean containsAlter(String sql) {
         String upper = sql.toUpperCase();
         return upper.contains("ALTER PROCEDURE")
-                || upper.contains("ALTER FUNCTION");
+                || upper.contains("ALTER FUNCTION")
+                || upper.contains("ALTER TRIGGER");
+    }
+
+    private static boolean containsCreate(String sql) {
+        String upper = sql.toUpperCase();
+        return upper.contains("CREATE PROCEDURE")
+                || upper.contains("CREATE FUNCTION")
+                || upper.contains("CREATE TRIGGER");
     }
 
     private static String replaceAlterWithCreate(String sql) {
         return sql
                 .replaceFirst("(?i)ALTER\\s+PROCEDURE", "CREATE PROCEDURE")
-                .replaceFirst("(?i)ALTER\\s+FUNCTION", "CREATE FUNCTION");
+                .replaceFirst("(?i)ALTER\\s+FUNCTION",  "CREATE FUNCTION")
+                .replaceFirst("(?i)ALTER\\s+TRIGGER",   "CREATE TRIGGER");
     }
 
+    private static String replaceCreateWithAlter(String sql) {
+        return sql
+                .replaceFirst("(?i)CREATE\\s+PROCEDURE", "ALTER PROCEDURE")
+                .replaceFirst("(?i)CREATE\\s+FUNCTION",  "ALTER FUNCTION")
+                .replaceFirst("(?i)CREATE\\s+TRIGGER",   "ALTER TRIGGER");
+    }
 }
