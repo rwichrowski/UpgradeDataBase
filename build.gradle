@@ -1,0 +1,39 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.diligentia'
+version = '1.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.microsoft.sqlserver:mssql-jdbc:10.2.0.jre17'
+    implementation 'commons-io:commons-io:2.21.0'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.diligentia.SqlExecutor'
+    }
+}
+
+shadowJar {
+    archiveClassifier = ''
+}

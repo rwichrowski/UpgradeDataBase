@@ -107,7 +107,12 @@ public class SqlExecutor {
 
             } catch (SQLException ex) {
 
-                if (shouldRetryWithOppositeKeyword(ex) && containsAlter(sql)) {
+                if (containsCreateOrAlter(sql)) {
+                    // CREATE OR ALTER jest idempotentne — nie ma sensu retry; zgłoś błąd wprost
+                    System.out.printf("ERR | %s | %s | %s%n",
+                            target.getEnv(), scriptFile.getName(), ex.getMessage());
+
+                } else if (shouldRetryWithOppositeKeyword(ex) && containsAlter(sql)) {
 
                     // Obiekt nie istnieje → spróbuj CREATE
                     String createSql = replaceAlterWithCreate(sql);
@@ -176,6 +181,9 @@ public class SqlExecutor {
         String upper = sql.toUpperCase();
 
         int[] indexes = {
+                upper.indexOf("CREATE OR ALTER PROCEDURE"),
+                upper.indexOf("CREATE OR ALTER FUNCTION"),
+                upper.indexOf("CREATE OR ALTER TRIGGER"),
                 upper.indexOf("ALTER PROCEDURE"),
                 upper.indexOf("CREATE PROCEDURE"),
                 upper.indexOf("CREATE FUNCTION"),
@@ -209,11 +217,18 @@ public class SqlExecutor {
                 || errorCode == 2714;  // There is already an object named '...' (istnieje → użyj ALTER)
     }
 
-    private static boolean containsAlter(String sql) {
+    private static boolean containsCreateOrAlter(String sql) {
         String upper = sql.toUpperCase();
-        return upper.contains("ALTER PROCEDURE")
-                || upper.contains("ALTER FUNCTION")
-                || upper.contains("ALTER TRIGGER");
+        return upper.contains("CREATE OR ALTER PROCEDURE")
+                || upper.contains("CREATE OR ALTER FUNCTION")
+                || upper.contains("CREATE OR ALTER TRIGGER");
+    }
+
+    private static boolean containsAlter(String sql) {
+        // Negative lookbehind wyklucza "OR ALTER" będące częścią "CREATE OR ALTER"
+        return java.util.regex.Pattern
+                .compile("(?i)(?<!OR\\s)ALTER\\s+(PROCEDURE|FUNCTION|TRIGGER)")
+                .matcher(sql).find();
     }
 
     private static boolean containsCreate(String sql) {
