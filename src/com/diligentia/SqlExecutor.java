@@ -104,6 +104,7 @@ public class SqlExecutor {
             try {
                 stmt.execute(sql);
                 System.out.printf("OK  | %s | %s%n", target.getEnv(), scriptFile.getName());
+                printSqlMessages(target, scriptFile, stmt);
 
             } catch (SQLException ex) {
 
@@ -175,6 +176,20 @@ public class SqlExecutor {
         }
 
         System.out.println("\nDone.");
+    }
+
+    private static void printSqlMessages(DbTarget target, File scriptFile, Statement stmt) {
+        try {
+            SQLWarning warning = stmt.getWarnings();
+            while (warning != null) {
+                System.out.printf("    > %s | %s | %s%n",
+                        target.getEnv(), scriptFile.getName(), warning.getMessage());
+                warning = warning.getNextWarning();
+            }
+            stmt.clearWarnings();
+        } catch (SQLException ignored) {
+            // brak komunikatow PRINT lub sterownik ich nie udostepnia
+        }
     }
 
     private static String normalizeSql(String sql) {
