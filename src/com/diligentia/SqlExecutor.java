@@ -193,29 +193,15 @@ public class SqlExecutor {
     }
 
     private static String normalizeSql(String sql) {
-        String upper = sql.toUpperCase();
+        // Znajdz pierwsze CREATE/ALTER (ew. CREATE OR ALTER) dla PROC(EDURE)/FUNCTION/TRIGGER
+        // i obetnij wszystko przed nim (naglowek SET ANSI_NULLS, komentarze itp.).
+        // Obsluguje skrot PROC oraz dowolne biale znaki miedzy slowami.
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?im)\\b(CREATE\\s+OR\\s+ALTER|CREATE|ALTER)\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)\\b")
+                .matcher(sql);
 
-        int[] indexes = {
-                upper.indexOf("CREATE OR ALTER PROCEDURE"),
-                upper.indexOf("CREATE OR ALTER FUNCTION"),
-                upper.indexOf("CREATE OR ALTER TRIGGER"),
-                upper.indexOf("ALTER PROCEDURE"),
-                upper.indexOf("CREATE PROCEDURE"),
-                upper.indexOf("CREATE FUNCTION"),
-                upper.indexOf("ALTER FUNCTION"),
-                upper.indexOf("ALTER TRIGGER"),
-                upper.indexOf("CREATE TRIGGER")
-        };
-
-        int minIndex = Integer.MAX_VALUE;
-        for (int idx : indexes) {
-            if (idx != -1 && idx < minIndex) {
-                minIndex = idx;
-            }
-        }
-
-        if (minIndex != Integer.MAX_VALUE) {
-            sql = sql.substring(minIndex);
+        if (m.find()) {
+            sql = sql.substring(m.start());
         }
 
         // usuwanie GO
@@ -233,37 +219,31 @@ public class SqlExecutor {
     }
 
     private static boolean containsCreateOrAlter(String sql) {
-        String upper = sql.toUpperCase();
-        return upper.contains("CREATE OR ALTER PROCEDURE")
-                || upper.contains("CREATE OR ALTER FUNCTION")
-                || upper.contains("CREATE OR ALTER TRIGGER");
+        return java.util.regex.Pattern
+                .compile("(?i)CREATE\\s+OR\\s+ALTER\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)")
+                .matcher(sql).find();
     }
 
     private static boolean containsAlter(String sql) {
         // Negative lookbehind wyklucza "OR ALTER" będące częścią "CREATE OR ALTER"
         return java.util.regex.Pattern
-                .compile("(?i)(?<!OR\\s)ALTER\\s+(PROCEDURE|FUNCTION|TRIGGER)")
+                .compile("(?i)(?<!OR\\s)ALTER\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)")
                 .matcher(sql).find();
     }
 
     private static boolean containsCreate(String sql) {
-        String upper = sql.toUpperCase();
-        return upper.contains("CREATE PROCEDURE")
-                || upper.contains("CREATE FUNCTION")
-                || upper.contains("CREATE TRIGGER");
+        return java.util.regex.Pattern
+                .compile("(?i)(?<!OR\\s)CREATE\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)")
+                .matcher(sql).find();
     }
 
     private static String replaceAlterWithCreate(String sql) {
-        return sql
-                .replaceFirst("(?i)ALTER\\s+PROCEDURE", "CREATE PROCEDURE")
-                .replaceFirst("(?i)ALTER\\s+FUNCTION",  "CREATE FUNCTION")
-                .replaceFirst("(?i)ALTER\\s+TRIGGER",   "CREATE TRIGGER");
+        // Podmienia tylko slowo ALTER->CREATE, zachowujac PROC/PROCEDURE/FUNCTION/TRIGGER
+        return sql.replaceFirst("(?i)ALTER(\\s+)(PROC(EDURE)?|FUNCTION|TRIGGER)", "CREATE$1$2");
     }
 
     private static String replaceCreateWithAlter(String sql) {
-        return sql
-                .replaceFirst("(?i)CREATE\\s+PROCEDURE", "ALTER PROCEDURE")
-                .replaceFirst("(?i)CREATE\\s+FUNCTION",  "ALTER FUNCTION")
-                .replaceFirst("(?i)CREATE\\s+TRIGGER",   "ALTER TRIGGER");
+        // Nie ruszamy "CREATE OR ALTER" — lookahead wymaga PROC/FUNCTION/TRIGGER zaraz po CREATE
+        return sql.replaceFirst("(?i)CREATE(\\s+)(PROC(EDURE)?|FUNCTION|TRIGGER)", "ALTER$1$2");
     }
 }
