@@ -193,6 +193,11 @@ public class SqlExecutor {
     }
 
     private static String normalizeSql(String sql) {
+        // BOM z plikow UTF-8 (Java go nie usuwa) - serwer widzi go jako '?' i zglasza blad skladni
+        if (sql.startsWith("﻿")) {
+            sql = sql.substring(1);
+        }
+
         // Znajdz pierwsze CREATE/ALTER (ew. CREATE OR ALTER) dla PROC(EDURE)/FUNCTION/TRIGGER
         // i obetnij wszystko przed nim (naglowek SET ANSI_NULLS, komentarze itp.).
         // Obsluguje skrot PROC oraz dowolne biale znaki miedzy slowami.
