@@ -13,10 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 mvn clean package
 
 # Run from source (development)
-mvn compile exec:java -Dexec.mainClass="com.diligentia.SqlExecutor"
+mvn compile exec:java "-Dexec.mainClass=com.diligentia.SqlExecutor"
 
 # Run packaged JAR
-java -jar target/UpgradeDataBase-1.0-SNAPSHOT.jar
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar
 ```
 
 Requires Java 11+ and Maven 3.x. No test suite exists.

@@ -65,19 +65,69 @@ C:\sql\updates\dbo.usp_SaveOrder.sql
 C:\sql\updates\dbo.ufn_CalcTotal.sql
 ```
 
-## Uruchomienie
+## Uruchomienie bez IDE (PowerShell)
 
-```bash
-mvn compile exec:java -Dexec.mainClass="com.diligentia.SqlExecutor"
+IntelliJ nie jest potrzebny — wystarczy JDK 11+ i Maven w `PATH`. Sprawdzenie:
+
+```powershell
+java -version
+mvn -v
 ```
 
-lub po zbudowaniu jara:
+### 1. Kompilacja
 
-```bash
-java -jar target/UpgradeDataBase-1.0-SNAPSHOT.jar
+W katalogu projektu:
+
+```powershell
+cd C:\git\_priv\UpgradeDataBase
+mvn clean package
 ```
 
-Pliki `targets.txt` i `scripts_paths.txt` muszą znajdować się w katalogu, z którego uruchamiasz program.
+Maven pobiera zależności (sterownik `mssql-jdbc`, `commons-io`) i buduje **jeden samowystarczalny jar** (plugin `maven-shade-plugin`):
+
+```
+target\UpgradeDataBase-1.0-SNAPSHOT.jar           <- ten uruchamiasz (klasy + sterownik JDBC + Main-Class)
+target\original-UpgradeDataBase-1.0-SNAPSHOT.jar  <- sam kod bez zależności, do pominięcia
+```
+
+Źródła leżą w `src/com/...` (nie w standardowym `src/main/java`), dlatego `pom.xml` ma ustawione `<sourceDirectory>src</sourceDirectory>`.
+
+### 2. Pliki konfiguracyjne
+
+W katalogu, **z którego uruchamiasz** program (domyślnie katalog projektu), muszą leżeć `targets.txt` i `scripts_paths.txt` — format opisany w sekcji [Konfiguracja](#konfiguracja). Program szuka ich po ścieżce względnej, więc liczy się bieżący katalog PowerShella, a nie położenie jara.
+
+```powershell
+New-Item targets.txt -ItemType File        # jeśli jeszcze nie ma
+New-Item scripts_paths.txt -ItemType File
+notepad targets.txt
+notepad scripts_paths.txt
+```
+
+### 3. Uruchomienie
+
+```powershell
+cd C:\git\_priv\UpgradeDataBase
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar
+```
+
+Jar można też skopiować w dowolne miejsce (np. `C:\Tools\UpgradeDataBase\`) razem z oboma plikami `.txt` i uruchamiać stamtąd — nie potrzebuje Mavena ani repozytorium, tylko Javy.
+
+Gdy polskie znaki w konsoli wychodzą krzaczkami, przed uruchomieniem przełącz stronę kodową na UTF-8:
+
+```powershell
+chcp 65001
+java "-Dstdout.encoding=UTF-8" -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar
+```
+
+### Alternatywa: prosto ze źródeł przez Maven
+
+Bez budowania jara (kompiluje i od razu uruchamia):
+
+```powershell
+mvn compile exec:java "-Dexec.mainClass=com.diligentia.SqlExecutor"
+```
+
+W PowerShellu parametr `-D...` trzeba ująć w cudzysłów w całości, inaczej PowerShell rozbije go na dwa argumenty.
 
 ## Format wyjścia
 
