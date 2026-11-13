@@ -147,3 +147,88 @@ Done.
 - `OK` — skrypt wykonany pomyślnie
 - `OK (ALTER->CREATE)` / `OK (CREATE->ALTER)` — wykonano po automatycznej zamianie słowa kluczowego
 - `ERR` — błąd SQL; obok komunikat błędu z serwera
+
+## Porównywanie baz i repozytorium (`diff`)
+
+Drugi tryb tego samego jara: pobiera z bazy wszystkie procedury, funkcje, widoki i triggery (jedno zapytanie do `sys.sql_modules`), zapisuje je jako pliki i porównuje z drugą bazą albo z katalogiem repozytorium.
+
+### Okno (GUI)
+
+```powershell
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff
+```
+
+W IntelliJ: konfiguracja *Application*, main class `com.diligentia.SqlExecutor`, *Program arguments* `diff`, *Working directory* — katalog z `targets.txt`.
+
+- **Lewa / Prawa** — lista podpowiada środowiska z `targets.txt` i ostatnio używane katalogi; można też wpisać ścieżkę albo wybrać ją przyciskiem `…`. `⇅ Zamień` zamienia strony.
+- **Gałąź git** — obok strony będącej katalogiem w repozytorium widać `gałąź: …` (zielono dla `master`/`main`, pomarańczowo dla innych). Odczyt z `.git/HEAD`, odświeżany przy zmianie strony i po powrocie do okna — więc po przełączeniu gałęzi w IDE etykieta jest aktualna.
+- **Porównaj** (Enter) — pobiera bazy na bieżąco (w tle, postęp na pasku stanu) i wypełnia tabelę. Gdy katalog repozytorium jest na gałęzi innej niż `master`/`main`, najpierw pyta, czy porównywać z tą gałęzią. Gałąź trafia też do nagłówków kolumn, `report.txt` i planu wdrożenia (z ostrzeżeniem, jeśli zmieniła się od porównania).
+- **Filtry** — szukanie po nazwie, typ obiektu i statusy z licznikami; identyczne są domyślnie ukryte. Kolumny sortują się kliknięciem w nagłówek.
+- **Dwuklik / Enter na wierszu** — WinMerge z różnicami tego obiektu (znormalizowane kopie, więc widać tylko prawdziwe różnice). Dla obiektu jednostronnego druga strona jest pusta.
+- **Prawy przycisk** — otwarcie pliku źródłowego (plik z repo albo zrzutu bazy), **historia pliku w Git Extensions** (wszystkie commity zmieniające plik; aktywne tylko dla pliku leżącego w repozytorium git; skrót **H** na zaznaczonym wierszu), kopiowanie nazwy obiektu i ścieżek.
+- **Dół okna** — `Ostrzeżenia (n)`, `Raport` (report.txt), `Wszystko w WinMerge` (porównanie katalogów z samymi rozjechanymi obiektami).
+
+WinMerge i Git Extensions są szukane w `Program Files`, `%LOCALAPPDATA%\Programs` i w `PATH`; gdy ich nie ma, okno zapyta o `WinMergeU.exe` / `GitExtensions.exe` i zapamięta wybór. Ostatnie strony, opcje i rozmiar okna są zapamiętywane w rejestrze użytkownika (Java Preferences).
+
+Lista środowisk w oknie i w `diff compare` obejmuje także **zakomentowane** linie `targets.txt` — porównać można z każdym zdefiniowanym środowiskiem, niezależnie od tego, które jest akurat aktywne do wdrożenia.
+
+### Wdrożenie wersji z repozytorium
+
+Dostępne tylko, gdy jedna strona porównania to baza, a druga katalog repozytorium — wtedy pod tabelą pojawia się pasek **Wdrożenie z repozytorium**.
+
+1. Zaznacz obiekty w kolumnie `✔` (checkbox mają tylko obiekty, które są w repo; `Zaznacz widoczne` zaznacza wszystko, co przechodzi bieżące filtry).
+2. Oba przyciski najpierw pokazują plan (listę plików, uwagi i co zostanie nadpisane), a po potwierdzeniu zapisują:
+   - `scripts_paths.txt` — ścieżki wybranych plików z repo (bez duplikatów, w kolejności: funkcje, widoki, procedury, triggery),
+   - `targets.txt` — aktywne zostaje tylko środowisko docelowe (odkomentowane, gdy było zakomentowane), pozostałe definicje środowisk są komentowane `# `; inne linie bez zmian.
+3. Dalej zależnie od przycisku:
+   - **`Wdróż teraz (n) → ENV`** — od razu wykonuje skrypty tak jak `SqlExecutor` bez argumentów. Log `OK` / `ERR` pojawia się na żywo w osobnym oknie, na końcu jest podsumowanie i przycisk `Porównaj ponownie`. W oknie potwierdzenia domyślnie zaznaczone jest `Anuluj`.
+   - **`Tylko przygotuj pliki (n)`** — kończy na zapisie plików; wdrożenie uruchamiasz sam (`SqlExecutor` bez argumentów w IntelliJ albo `java -jar`), potem `Porównaj`.
+
+Uwaga: plik z kilkoma obiektami rozdzielonymi `GO` jest oznaczany ostrzeżeniem — `SqlExecutor` usuwa `GO` i wykonuje cały plik jako jeden batch, co dla kilku `CREATE` kończy się błędem.
+
+### Polecenia konsolowe
+
+```powershell
+# zrzut obiektów do snapshots\<ENV>\ (bez nazwy - wszystkie aktywne środowiska z targets.txt)
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff snapshot "PROD"
+
+# baza vs repozytorium
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff compare "PROD" C:\repo\SQL
+
+# baza vs baza, z otwarciem wyniku w WinMerge
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff compare DEV "PROD" --open
+```
+
+Strona porównania to **nazwa środowiska z `targets.txt`** (pobierana na bieżąco) albo **ścieżka katalogu** z plikami `.sql` — także wcześniejszego zrzutu z `snapshots\`. Opcje: `-w` ignoruje różnice w białych znakach, `-i` wielkość liter, `--open` otwiera WinMerge.
+
+### Wynik
+
+```
+ROZNI SIE    | PROCEDURE | dbo.GUI_GetOrders   | PROD 2026-11-10 14:22 <-> C:\git\...\dbo.GUI_GetOrders.sql
+TYLKO LEWA   | FUNCTION  | dbo.fn_Old          | PROD 2025-01-03 09:00
+TYLKO PRAWA  | VIEW      | dbo.vw_New          | C:\git\...\dbo.vw_New.View.sql
+
+Podsumowanie: rozni sie 1, tylko lewa 1, tylko prawa 1, szyfrowany 0, identyczne 1840
+```
+
+- `diff\<lewa>__vs__<prawa>\left` i `\right` — znormalizowane pliki **tylko** obiektów różnych i jednostronnych; WinMerge w trybie porównania katalogów pokazuje dokładnie tę listę, a dwuklik otwiera różnice w obiekcie. Na końcu raportu jest gotowa komenda WinMerge.
+- `diff\...\report.txt` — ten sam raport co w konsoli, z ostrzeżeniami (duplikaty obiektu, pliki bez procedury).
+- `snapshots\<ENV>\` — treść obiektów 1:1 z bazy, plik na obiekt (`dbo.X.StoredProcedure.sql`).
+
+Oba katalogi są w `.gitignore` i przy każdym przebiegu ich pliki `.sql` są nadpisywane.
+
+### Co jest uznawane za różnicę
+
+Przed porównaniem obie strony są normalizowane, żeby nie zgłaszać szumu:
+
+- tekst przed nagłówkiem obiektu (`SET ANSI_NULLS`, `/****** Object: ... ******/`, komentarze) jest pomijany,
+- `ALTER` / `CREATE OR ALTER` / `PROC` → `CREATE PROCEDURE`, nazwa → `[schemat].[nazwa]` (brak schematu = `dbo`), wielkość liter w nazwie bez znaczenia,
+- końce linii, spacje na końcach linii i puste linie na początku/końcu.
+
+Pliki repozytorium są czytane rekurencyjnie; plik może zawierać kilka obiektów rozdzielonych `GO`. Gdy ten sam obiekt występuje kilka razy, liczy się ostatnie wystąpienie (ostrzeżenie w raporcie). Kodowanie rozpoznawane po BOM (UTF-8, UTF-16 z SSMS), bez BOM UTF-8, a w razie błędu windows-1250.
+
+### Ograniczenia
+
+- Tylko procedury, funkcje, widoki i triggery tabel — bez tabel, indeksów, typów i triggerów DDL.
+- Login z `targets.txt` potrzebuje `VIEW DEFINITION`; obiekty `WITH ENCRYPTION` mają status `SZYFROWANY`.
+- Skrypt wdrożony przez ten program bez `GO` po procedurze zostaje w bazie razem z tym, co stało za nią w pliku (np. `GRANT`) — porównanie pokaże to jako różnicę, bo w bazie faktycznie tak jest.

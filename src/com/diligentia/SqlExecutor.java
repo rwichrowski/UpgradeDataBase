@@ -108,7 +108,24 @@ public class SqlExecutor {
         return scriptFiles;
     }
 
+    /** Wykonuje wszystkie skrypty na wszystkich srodowiskach; wynik (OK/ERR) pisze do out. */
+    public static void deploy(List<DbTarget> targets, List<File> scripts, PrintStream out) {
+        for (DbTarget target : targets) {
+            out.printf("%n=== ENV: %s ===%n", target.getEnv());
+
+            for (File script : scripts) {
+                executeSqlScript(target, script, out);
+            }
+        }
+
+        out.println("\nDone.");
+    }
+
     public static void executeSqlScript(DbTarget target, File scriptFile) {
+        executeSqlScript(target, scriptFile, System.out);
+    }
+
+    public static void executeSqlScript(DbTarget target, File scriptFile, PrintStream out) {
         try (Connection connection = getConnection(target);
              Statement stmt = connection.createStatement()) {
 
@@ -120,14 +137,14 @@ public class SqlExecutor {
 
             try {
                 stmt.execute(sql);
-                System.out.printf("OK  | %s | %s%n", target.getEnv(), scriptFile.getName());
-                printSqlMessages(target, scriptFile, stmt);
+                out.printf("OK  | %s | %s%n", target.getEnv(), scriptFile.getName());
+                printSqlMessages(target, scriptFile, stmt, out);
 
             } catch (SQLException ex) {
 
                 if (containsCreateOrAlter(sql)) {
                     // CREATE OR ALTER jest idempotentne — nie ma sensu retry; zgłoś błąd wprost
-                    System.out.printf("ERR | %s | %s | %s%n",
+                    out.printf("ERR | %s | %s | %s%n",
                             target.getEnv(), scriptFile.getName(), ex.getMessage());
 
                 } else if (shouldRetryWithOppositeKeyword(ex) && containsAlter(sql)) {
@@ -136,10 +153,10 @@ public class SqlExecutor {
                     String createSql = replaceAlterWithCreate(sql);
                     try {
                         stmt.execute(createSql);
-                        System.out.printf("OK  | %s | %s (ALTER->CREATE)%n",
+                        out.printf("OK  | %s | %s (ALTER->CREATE)%n",
                                 target.getEnv(), scriptFile.getName());
                     } catch (SQLException ex2) {
-                        System.out.printf("ERR | %s | %s | %s%n",
+                        out.printf("ERR | %s | %s | %s%n",
                                 target.getEnv(), scriptFile.getName(), ex2.getMessage());
                     }
 
@@ -149,26 +166,31 @@ public class SqlExecutor {
                     String alterSql = replaceCreateWithAlter(sql);
                     try {
                         stmt.execute(alterSql);
-                        System.out.printf("OK  | %s | %s (CREATE->ALTER)%n",
+                        out.printf("OK  | %s | %s (CREATE->ALTER)%n",
                                 target.getEnv(), scriptFile.getName());
                     } catch (SQLException ex2) {
-                        System.out.printf("ERR | %s | %s | %s%n",
+                        out.printf("ERR | %s | %s | %s%n",
                                 target.getEnv(), scriptFile.getName(), ex2.getMessage());
                     }
 
                 } else {
-                    System.out.printf("ERR | %s | %s | %s%n",
+                    out.printf("ERR | %s | %s | %s%n",
                             target.getEnv(), scriptFile.getName(), ex.getMessage());
                 }
             }
 
         } catch (SQLException | IOException e) {
-            System.out.printf("ERR | %s | %s | %s%n",
+            out.printf("ERR | %s | %s | %s%n",
                     target.getEnv(), scriptFile.getName(), e.getMessage());
         }
     }
 
     public static void main(String[] args) {
+        if (args.length > 0 && args[0].equalsIgnoreCase("diff")) {
+            com.diligentia.diff.SchemaDiffCli.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+
         // opcjonalny 1. argument (osobny run): pojedynczy skrypt *.sql (sama nazwa szukana tez w scripts\)
         // albo inna lista skryptow *.txt; bez argumentu - scripts_paths.txt
         String scriptsArg = args.length > 0 ? args[0] : "scripts_paths.txt";
@@ -186,22 +208,14 @@ public class SqlExecutor {
             return;
         }
 
-        for (DbTarget target : targets) {
-            System.out.printf("%n=== ENV: %s ===%n", target.getEnv());
-
-            for (File script : scripts) {
-                executeSqlScript(target, script);
-            }
-        }
-
-        System.out.println("\nDone.");
+        deploy(targets, scripts, System.out);
     }
 
-    private static void printSqlMessages(DbTarget target, File scriptFile, Statement stmt) {
+    private static void printSqlMessages(DbTarget target, File scriptFile, Statement stmt, PrintStream out) {
         try {
             SQLWarning warning = stmt.getWarnings();
             while (warning != null) {
-                System.out.printf("    > %s | %s | %s%n",
+                out.printf("    > %s | %s | %s%n",
                         target.getEnv(), scriptFile.getName(), warning.getMessage());
                 warning = warning.getNextWarning();
             }
@@ -217,11 +231,11 @@ public class SqlExecutor {
             sql = sql.substring(1);
         }
 
-        // Znajdz pierwsze CREATE/ALTER (ew. CREATE OR ALTER) dla PROC(EDURE)/FUNCTION/TRIGGER
+        // Znajdz pierwsze CREATE/ALTER (ew. CREATE OR ALTER) dla PROC(EDURE)/FUNCTION/TRIGGER/VIEW
         // i obetnij wszystko przed nim (naglowek SET ANSI_NULLS, komentarze itp.).
         // Obsluguje skrot PROC oraz dowolne biale znaki miedzy slowami.
         java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("(?im)\\b(CREATE\\s+OR\\s+ALTER|CREATE|ALTER)\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)\\b")
+                .compile("(?im)\\b(CREATE\\s+OR\\s+ALTER|CREATE|ALTER)\\s+(PROC(EDURE)?|FUNCTION|TRIGGER|VIEW)\\b")
                 .matcher(sql);
 
         if (m.find()) {
@@ -244,30 +258,30 @@ public class SqlExecutor {
 
     private static boolean containsCreateOrAlter(String sql) {
         return java.util.regex.Pattern
-                .compile("(?i)CREATE\\s+OR\\s+ALTER\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)")
+                .compile("(?i)CREATE\\s+OR\\s+ALTER\\s+(PROC(EDURE)?|FUNCTION|TRIGGER|VIEW)")
                 .matcher(sql).find();
     }
 
     private static boolean containsAlter(String sql) {
         // Negative lookbehind wyklucza "OR ALTER" będące częścią "CREATE OR ALTER"
         return java.util.regex.Pattern
-                .compile("(?i)(?<!OR\\s)ALTER\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)")
+                .compile("(?i)(?<!OR\\s)ALTER\\s+(PROC(EDURE)?|FUNCTION|TRIGGER|VIEW)")
                 .matcher(sql).find();
     }
 
     private static boolean containsCreate(String sql) {
         return java.util.regex.Pattern
-                .compile("(?i)(?<!OR\\s)CREATE\\s+(PROC(EDURE)?|FUNCTION|TRIGGER)")
+                .compile("(?i)(?<!OR\\s)CREATE\\s+(PROC(EDURE)?|FUNCTION|TRIGGER|VIEW)")
                 .matcher(sql).find();
     }
 
     private static String replaceAlterWithCreate(String sql) {
-        // Podmienia tylko slowo ALTER->CREATE, zachowujac PROC/PROCEDURE/FUNCTION/TRIGGER
-        return sql.replaceFirst("(?i)ALTER(\\s+)(PROC(EDURE)?|FUNCTION|TRIGGER)", "CREATE$1$2");
+        // Podmienia tylko slowo ALTER->CREATE, zachowujac PROC/PROCEDURE/FUNCTION/TRIGGER/VIEW
+        return sql.replaceFirst("(?i)ALTER(\\s+)(PROC(EDURE)?|FUNCTION|TRIGGER|VIEW)", "CREATE$1$2");
     }
 
     private static String replaceCreateWithAlter(String sql) {
-        // Nie ruszamy "CREATE OR ALTER" — lookahead wymaga PROC/FUNCTION/TRIGGER zaraz po CREATE
-        return sql.replaceFirst("(?i)CREATE(\\s+)(PROC(EDURE)?|FUNCTION|TRIGGER)", "ALTER$1$2");
+        // Nie ruszamy "CREATE OR ALTER" — lookahead wymaga PROC/FUNCTION/TRIGGER/VIEW zaraz po CREATE
+        return sql.replaceFirst("(?i)CREATE(\\s+)(PROC(EDURE)?|FUNCTION|TRIGGER|VIEW)", "ALTER$1$2");
     }
 }

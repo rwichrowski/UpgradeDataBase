@@ -39,7 +39,7 @@ C:\path\to\dbo.MyProcedure.StoredProcedure.sql
 
 ## Architecture
 
-The entire application is a single file: `src/com/diligentia/SqlExecutor.java`.
+Deployment lives in `src/com/diligentia/SqlExecutor.java`; the `diff` mode (first argument `diff`, dispatched from `SqlExecutor.main`) lives in `src/com/diligentia/diff/` — `SchemaDiffCli` (commands; no args or `gui` opens the window), `SchemaDiffWindow` (Swing GUI), `SchemaDiffService` (shared compare/report/output files), `WinMerge` (launcher), `DeploymentPreparer` (fills scripts_paths.txt + activates one env in targets.txt for repo->DB deploy), `ModuleSources` (sys.sql_modules / folder reader, snapshot writer), `SqlTextParser` (offline GO split + CREATE/ALTER header), `ModuleComparer` (normalization + statuses), `SqlModule` (DTO). See README "Porównywanie baz i repozytorium".
 
 **Execution flow:**
 1. Read `targets.txt` → list of `DbTarget` objects (name, JDBC URL, credentials)
@@ -52,10 +52,10 @@ The entire application is a single file: `src/com/diligentia/SqlExecutor.java`.
 
 **Output format:**
 ```
-=== ENV: PRODUKCJA Polska ===
-OK  | PRODUKCJA Polska | dbo.MyProc.StoredProcedure.sql
-OK  | PRODUKCJA Polska | dbo.MyFunc.sql (ALTER->CREATE)
-ERR | PRODUKCJA Polska | dbo.Bad.sql | <error message>
+=== ENV: PROD ===
+OK  | PROD | dbo.MyProc.StoredProcedure.sql
+OK  | PROD | dbo.MyFunc.sql (ALTER->CREATE)
+ERR | PROD | dbo.Bad.sql | <error message>
 ...
 Done.
 ```

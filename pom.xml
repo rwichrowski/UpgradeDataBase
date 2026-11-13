@@ -28,6 +28,12 @@
     <build>
         <!-- Zrodla leza bezposrednio w src/, nie w standardowym src/main/java -->
         <sourceDirectory>src</sourceDirectory>
+        <!-- Zasoby (ikona okna) w resources/, trafiaja do jara jako /icons/... -->
+        <resources>
+            <resource>
+                <directory>resources</directory>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
