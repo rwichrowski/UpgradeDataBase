@@ -162,10 +162,11 @@ W IntelliJ: konfiguracja *Application*, main class `com.diligentia.SqlExecutor`,
 
 - **Lewa / Prawa** — lista podpowiada środowiska z `targets.txt` i ostatnio używane katalogi; można też wpisać ścieżkę albo wybrać ją przyciskiem `…`. `⇅ Zamień` zamienia strony.
 - **Gałąź git** — obok strony będącej katalogiem w repozytorium widać `gałąź: …` (zielono dla `master`/`main`, pomarańczowo dla innych). Odczyt z `.git/HEAD`, odświeżany przy zmianie strony i po powrocie do okna — więc po przełączeniu gałęzi w IDE etykieta jest aktualna.
-- **Porównaj** (Enter) — pobiera bazy na bieżąco (w tle, postęp na pasku stanu) i wypełnia tabelę. Gdy katalog repozytorium jest na gałęzi innej niż `master`/`main`, najpierw pyta, czy porównywać z tą gałęzią. Gałąź trafia też do nagłówków kolumn, `report.txt` i planu wdrożenia (z ostrzeżeniem, jeśli zmieniła się od porównania).
+- **Porównaj bazy danych** (Enter) — porównuje procedury, funkcje, widoki i triggery; pobiera bazy na bieżąco (w tle, postęp na pasku stanu) i wypełnia tabelę. Gdy katalog repozytorium jest na gałęzi innej niż `master`/`main`, najpierw pyta, czy porównywać z tą gałęzią. Gałąź trafia też do nagłówków kolumn, `report.txt` i planu wdrożenia (z ostrzeżeniem, jeśli zmieniła się od porównania).
 - **Filtry** — szukanie po nazwie, typ obiektu i statusy z licznikami; identyczne są domyślnie ukryte. Kolumny sortują się kliknięciem w nagłówek.
 - **Dwuklik / Enter na wierszu** — WinMerge z różnicami tego obiektu (znormalizowane kopie, więc widać tylko prawdziwe różnice). Dla obiektu jednostronnego druga strona jest pusta.
 - **Prawy przycisk** — otwarcie pliku źródłowego (plik z repo albo zrzutu bazy), **historia pliku w Git Extensions** (wszystkie commity zmieniające plik; aktywne tylko dla pliku leżącego w repozytorium git; skrót **H** na zaznaczonym wierszu), kopiowanie nazwy obiektu i ścieżek.
+- **Porównaj słowniki** — porównanie danych tabel słownikowych między dwiema bazami, opis niżej w [Porównanie słowników](#porównanie-słowników-dane-tabel).
 - **Dół okna** — `Ostrzeżenia (n)`, `Raport` (report.txt), `Wszystko w WinMerge` (porównanie katalogów z samymi rozjechanymi obiektami).
 
 WinMerge i Git Extensions są szukane w `Program Files`, `%LOCALAPPDATA%\Programs` i w `PATH`; gdy ich nie ma, okno zapyta o `WinMergeU.exe` / `GitExtensions.exe` i zapamięta wybór. Ostatnie strony, opcje i rozmiar okna są zapamiętywane w rejestrze użytkownika (Java Preferences).
@@ -182,9 +183,56 @@ Dostępne tylko, gdy jedna strona porównania to baza, a druga katalog repozytor
    - `targets.txt` — aktywne zostaje tylko środowisko docelowe (odkomentowane, gdy było zakomentowane), pozostałe definicje środowisk są komentowane `# `; inne linie bez zmian.
 3. Dalej zależnie od przycisku:
    - **`Wdróż teraz (n) → ENV`** — od razu wykonuje skrypty tak jak `SqlExecutor` bez argumentów. Log `OK` / `ERR` pojawia się na żywo w osobnym oknie, na końcu jest podsumowanie i przycisk `Porównaj ponownie`. W oknie potwierdzenia domyślnie zaznaczone jest `Anuluj`.
-   - **`Tylko przygotuj pliki (n)`** — kończy na zapisie plików; wdrożenie uruchamiasz sam (`SqlExecutor` bez argumentów w IntelliJ albo `java -jar`), potem `Porównaj`.
+   - **`Tylko przygotuj pliki (n)`** — kończy na zapisie plików; wdrożenie uruchamiasz sam (`SqlExecutor` bez argumentów w IntelliJ albo `java -jar`), potem `Porównaj bazy danych`.
 
 Uwaga: plik z kilkoma obiektami rozdzielonymi `GO` jest oznaczany ostrzeżeniem — `SqlExecutor` usuwa `GO` i wykonuje cały plik jako jeden batch, co dla kilku `CREATE` kończy się błędem.
+
+### Porównanie słowników (dane tabel)
+
+Przycisk **Porównaj słowniki** porównuje **dane** tabel konfiguracyjnych między dwiema bazami — obie strony muszą być środowiskami z `targets.txt` (danych słownikowych nie ma w repozytorium). Porównywane tabele i klucze, po których dopasowywane są wiersze:
+
+| Tabela | Klucz dopasowania | Pomijane kolumny | Podział |
+|---|---|---|---|
+| `Dict` | `DictCatId`, `Value` | `id` (IDENTITY) | osobny zakres na każdy słownik, z nazwą z `DictCat.Desc` |
+| `Parameters` | `Name` | — | — |
+| `TRCORE_TruckTypes` | `TypeDesc` | `Id` | — |
+| `StoreAreas` | `Name` | `WMSObjectId` | — |
+| `LogicalAreas` | `Name` | `WMSObjectID` | — |
+| `SUTypes` | `Desc` | `Id` | — |
+
+Klucze są naturalne, bo identyfikatory IDENTITY w każdej bazie są inne. Lista jest w `DataTableSpec.defaults()` — kolejna tabela to jedna linia.
+
+Widok zamiast tabeli obiektów:
+
+- **Lewy panel — zakresy**: tabela albo słownik (`Dict 12 – Typy dokumentów`) z licznikami `Różne / T. lewa / T. prawa / Ident.`. Domyślnie ukryte zakresy bez różnic. Na czerwono zakres, którego tabeli brakuje po jednej stronie.
+- **Prawy górny — wiersze zakresu**: status, klucz (pogrubiony) i kolumny. Różniąca się komórka jest pomarańczowa i pokazuje `lewa → prawa`; wiersze jednostronne lekko podbarwione. `Tylko kolumny z różnicami` (domyślnie włączone) chowa kolumny, w których w tym zakresie nic się nie różni.
+- **Prawy dolny — szczegół wiersza**: `Kolumna | Lewa | Prawa` dla wszystkich kolumn, różnice podświetlone.
+- **Szukaj** filtruje zakresy i wiersze po wartościach z obu stron (np. nazwa parametru albo `TextCode`); checkboxy statusów jak w porównaniu obiektów.
+- `Ignoruj białe znaki` / `Ignoruj wielkość liter` działają też na wartości. `NULL` różni się od pustego tekstu. Kolumny binarne (`Image`) porównywane po długości i SHA-1.
+- Kolumna obecna tylko po jednej stronie jest pomijana i zgłaszana w `Ostrzeżenia`; tam też powtórzone klucze.
+- `Raport` otwiera `diff\<lewa>__vs__<prawa>\data_report.txt` — tylko różnice, dla zmienionych wierszy same zmienione kolumny (`ShortDesc: 'a' -> 'b'`).
+
+#### Skrypt synchronizujący
+
+Pasek pod tabelami generuje skrypt T-SQL, który w bazie docelowej ustawia dane jak w źródłowej — **tylko jako plik, nic nie jest wykonywane**.
+
+1. Zaznacz wiersze w kolumnie `✔` (checkbox mają tylko wiersze z różnicą). `Zaznacz widoczne` — widoczne po filtrach w bieżącym zakresie, `Zaznacz wszystkie różnice` — we wszystkich tabelach i słownikach. Zaznaczenie obejmuje wiele zakresów naraz; ile wierszy jest zaznaczonych w danym zakresie, widać w kolumnie `✔` na liście po lewej.
+2. `Skrypt LEWA → PRAWA (n)` albo `Skrypt PRAWA → LEWA (n)` — kierunek wybierasz przyciskiem. Skrypt zapisuje się do `diff\<lewa>__vs__<prawa>\sync_<źródło>_to_<cel>.sql` i pokazuje w oknie (`Otwórz plik`, `Kopiuj do schowka`).
+
+Co jest w skrypcie (dla wybranego kierunku):
+
+| Wiersz | Instrukcja |
+|---|---|
+| tylko w źródle | `IF NOT EXISTS (...) INSERT` — wszystkie kolumny poza IDENTITY |
+| w obu, różni się | `UPDATE` tylko zmienionych kolumn, `WHERE` po kluczu z bazy docelowej |
+| tylko w celu | `DELETE` po kluczu |
+
+- W obrębie tabeli kolejność `DELETE`, `UPDATE`, `INSERT` (zwolnienie unikalnych nazw przed wstawieniem).
+- Na początku strażnik `IF DB_NAME() <> N'<baza z targets.txt>'` — skrypt uruchomiony na innej bazie nic nie zrobi (`SET NOEXEC ON`).
+- Całość w `BEGIN TRAN` z `SET XACT_ABORT ON`, na końcu **`ROLLBACK TRAN`** — uruchom, sprawdź wynik, potem zamień na `COMMIT TRAN`.
+- Liczby bez cudzysłowu, daty w formacie ISO (`'2026-11-13T05:58:00.0'`), tekst jako `N'...'`.
+- Kolumny binarne (`TRCORE_TruckTypes.Image`) nie są przenoszone — w skrypcie jest komentarz `UWAGA`. Wiersze tabeli, której nie ma w bazie docelowej, są pominięte i wypisane w nagłówku.
+- Kolumny z ID innych tabel (`LogicalAreas.StoreId`, `TRCORE_TruckTypes.IdDoc`) przechodzą 1:1 — sprawdź, czy te ID znaczą to samo w bazie docelowej. `INSERT` do `Dict` wymaga istniejącego wpisu w `DictCat`.
 
 ### Polecenia konsolowe
 
@@ -197,6 +245,9 @@ java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff compare "PROD" C:\repo\
 
 # baza vs baza, z otwarciem wyniku w WinMerge
 java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff compare DEV "PROD" --open
+
+# słowniki (dane tabel Dict, Parameters, ...) baza vs baza
+java -jar .\target\UpgradeDataBase-1.0-SNAPSHOT.jar diff data DEV "PROD"
 ```
 
 Strona porównania to **nazwa środowiska z `targets.txt`** (pobierana na bieżąco) albo **ścieżka katalogu** z plikami `.sql` — także wcześniejszego zrzutu z `snapshots\`. Opcje: `-w` ignoruje różnice w białych znakach, `-i` wielkość liter, `--open` otwiera WinMerge.

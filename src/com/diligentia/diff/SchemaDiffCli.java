@@ -12,6 +12,7 @@ import java.util.List;
  * diff [gui]                                      okno porownania
  * diff snapshot [ENV ...]
  * diff compare &lt;lewa&gt; &lt;prawa&gt; [-w] [-i] [--open]
+ * diff data &lt;lewaENV&gt; &lt;prawaENV&gt; [-w] [-i]
  * </pre>
  * Strona porownania to nazwa srodowiska z targets.txt (pobierana na biezaco) albo sciezka katalogu z plikami .sql.
  */
@@ -56,6 +57,13 @@ public final class SchemaDiffCli {
                     }
                     runCompare(positional.get(0), positional.get(1), ignoreWhitespace, ignoreCase, open);
                     break;
+                case "data":
+                    if (positional.size() != 2) {
+                        printUsage();
+                        return;
+                    }
+                    runDataCompare(positional.get(0), positional.get(1), ignoreWhitespace, ignoreCase);
+                    break;
                 default:
                     printUsage();
             }
@@ -90,6 +98,12 @@ public final class SchemaDiffCli {
         if (open) WinMerge.start(WinMerge.find(null), WinMerge.folderArgs(result.left.description, result.right.description, result.leftDir, result.rightDir));
     }
 
+    private static void runDataCompare(String leftEnv, String rightEnv, boolean ignoreWhitespace, boolean ignoreCase) throws Exception {
+        DataDiffService.Result result = DataDiffService.compare(leftEnv, rightEnv, ignoreWhitespace, ignoreCase, System.out::println);
+        result.report.forEach(System.out::println);
+        System.out.println("Raport: " + result.reportFile);
+    }
+
     // endregion
 
     // region Pomocnicze
@@ -103,6 +117,7 @@ public final class SchemaDiffCli {
         System.out.println("      -w              ignoruj roznice w bialych znakach");
         System.out.println("      -i              ignoruj wielkosc liter");
         System.out.println("      --open          otworz wynik w WinMerge (porownanie katalogow)");
+        System.out.println("  diff data <lewaENV> <prawaENV> [-w] [-i]      porownanie slownikow (Dict, Parameters, TRCORE_TruckTypes, StoreAreas, LogicalAreas, SUTypes)");
     }
 
     // endregion

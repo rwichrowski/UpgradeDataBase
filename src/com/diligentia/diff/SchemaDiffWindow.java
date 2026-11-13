@@ -36,6 +36,7 @@ import javax.swing.table.TableCellRenderer;
 import javax.swing.text.JTextComponent;
 import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -118,7 +119,8 @@ public class SchemaDiffWindow extends JFrame {
     private final JLabel rightBranch = new JLabel();
     private final JCheckBox ignoreWhitespace = new JCheckBox("Ignoruj białe znaki");
     private final JCheckBox ignoreCase = new JCheckBox("Ignoruj wielkość liter");
-    private final JButton compareButton = new JButton("Porównaj");
+    private final JButton compareButton = new JButton("Porównaj bazy danych");
+    private final JButton dataCompareButton = new JButton("Porównaj słowniki");
 
     private final JTextField filterText = new JTextField(24);
     private final JComboBox<String> typeFilter = new JComboBox<>(TYPES);
@@ -140,12 +142,20 @@ public class SchemaDiffWindow extends JFrame {
     private final JButton deployButton = new JButton("Tylko przygotuj pliki");
     private final JButton deployNowButton = new JButton("Wdróż teraz");
 
+    private static final String CARD_MODULES = "modules";
+    private static final String CARD_DATA = "data";
+    private final CardLayout centerCards = new CardLayout();
+    private final JPanel centerPanel = new JPanel(centerCards);
+    private final DataDiffPanel dataPanel = new DataDiffPanel(this::showDataSummary);
+    /** true, gdy na srodku jest widok porownania slownikow, false - obiektow bazy. */
+    private boolean dataView;
+
     private final List<JComponent> disabledWhileBusy = new ArrayList<>();
     private final List<String> environments = new ArrayList<>();
     private SchemaDiffService.Result result;
 
     public SchemaDiffWindow() {
-        super("UpgradeDataBase – porównanie obiektów bazy");
+        super("UpgradeDataBase – porównanie baz danych i słowników");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         applyWindowIcon();
         buildLayout();
@@ -178,10 +188,6 @@ public class SchemaDiffWindow extends JFrame {
     // region Uklad okna
 
     private void buildLayout() {
-        JPanel top = new JPanel(new BorderLayout());
-        top.add(buildSourcesPanel(), BorderLayout.NORTH);
-        top.add(buildFilterPanel(), BorderLayout.SOUTH);
-
         configureTable();
 
         JPanel statusRow = new JPanel(new BorderLayout(8, 0));
@@ -194,20 +200,23 @@ public class SchemaDiffWindow extends JFrame {
         buttons.add(folderCompareButton);
         statusRow.add(buttons, BorderLayout.EAST);
 
-        JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(buildDeployPanel(), BorderLayout.NORTH);
-        bottom.add(statusRow, BorderLayout.SOUTH);
-
         warningsButton.addActionListener(e -> showWarnings());
-        reportButton.addActionListener(e -> openFile(result == null ? null : result.reportFile()));
+        reportButton.addActionListener(e -> openFile(activeReportFile()));
         folderCompareButton.addActionListener(e -> openFolderCompare());
 
         JScrollPane scroll = new JScrollPane(table);
         scroll.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
 
-        getContentPane().add(top, BorderLayout.NORTH);
-        getContentPane().add(scroll, BorderLayout.CENTER);
-        getContentPane().add(bottom, BorderLayout.SOUTH);
+        JPanel modulesCard = new JPanel(new BorderLayout());
+        modulesCard.add(buildFilterPanel(), BorderLayout.NORTH);
+        modulesCard.add(scroll, BorderLayout.CENTER);
+        modulesCard.add(buildDeployPanel(), BorderLayout.SOUTH);
+        centerPanel.add(modulesCard, CARD_MODULES);
+        centerPanel.add(dataPanel, CARD_DATA);
+
+        getContentPane().add(buildSourcesPanel(), BorderLayout.NORTH);
+        getContentPane().add(centerPanel, BorderLayout.CENTER);
+        getContentPane().add(statusRow, BorderLayout.SOUTH);
     }
 
     private JPanel buildSourcesPanel() {
@@ -230,8 +239,12 @@ public class SchemaDiffWindow extends JFrame {
         swap.addActionListener(e -> swapSources());
 
         compareButton.setFont(compareButton.getFont().deriveFont(Font.BOLD));
+        compareButton.setToolTipText("Procedury, funkcje, widoki i triggery: baza albo katalog repozytorium (Enter)");
         compareButton.addActionListener(e -> runCompare());
         getRootPane().setDefaultButton(compareButton);
+        dataCompareButton.setFont(dataCompareButton.getFont().deriveFont(Font.BOLD));
+        dataCompareButton.setToolTipText("Dane tabel Dict (po słownikach), Parameters, TRCORE_TruckTypes, StoreAreas, LogicalAreas, SUTypes – tylko baza z bazą");
+        dataCompareButton.addActionListener(e -> runDataCompare());
 
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(2, 2, 2, 2);
@@ -256,8 +269,9 @@ public class SchemaDiffWindow extends JFrame {
         c.gridheight = 2;
         c.fill = GridBagConstraints.BOTH;
         addCell(panel, swap, c, 4, 0, 0);
-        addCell(panel, compareButton, c, 5, 0, 0);
         c.gridheight = 1;
+        addCell(panel, compareButton, c, 5, 0, 0);
+        addCell(panel, dataCompareButton, c, 5, 1, 0);
 
         JPanel options = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         options.add(ignoreWhitespace);
@@ -265,7 +279,7 @@ public class SchemaDiffWindow extends JFrame {
         c.gridwidth = 4;
         addCell(panel, options, c, 1, 2, 1);
 
-        disabledWhileBusy.addAll(Arrays.asList(leftSource, rightSource, browseLeft, browseRight, swap, compareButton, ignoreWhitespace, ignoreCase));
+        disabledWhileBusy.addAll(Arrays.asList(leftSource, rightSource, browseLeft, browseRight, swap, compareButton, dataCompareButton, ignoreWhitespace, ignoreCase));
         return panel;
     }
 
@@ -437,6 +451,7 @@ public class SchemaDiffWindow extends JFrame {
 
     private void showResult(SchemaDiffService.Result newResult) {
         result = newResult;
+        showView(false);
         tableModel.setResult(newResult);
         table.getColumnModel().getColumn(COL_LEFT).setHeaderValue("Lewa: " + newResult.left.label + (newResult.left.branch == null ? "" : " [" + newResult.left.branch + "]"));
         table.getColumnModel().getColumn(COL_RIGHT).setHeaderValue("Prawa: " + newResult.right.label + (newResult.right.branch == null ? "" : " [" + newResult.right.branch + "]"));
@@ -451,6 +466,70 @@ public class SchemaDiffWindow extends JFrame {
         updateResultButtons();
         updateDeployPanel();
         applyFilter();
+    }
+
+    // endregion
+
+    // region Porownanie slownikow
+
+    /** Porownanie danych tabel slownikowych - obie strony musza byc srodowiskami z targets.txt. */
+    private void runDataCompare() {
+        String leftSpec = sourceText(leftSource);
+        String rightSpec = sourceText(rightSource);
+        if (!isEnvironment(leftSpec) || !isEnvironment(rightSpec)) {
+            JOptionPane.showMessageDialog(this, "Słowniki porównuje się tylko między dwiema bazami – wybierz po obu stronach środowisko z " + SchemaDiffService.TARGETS_FILE + ".\nDanych słownikowych nie ma w repozytorium.", "Porównanie słowników", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        boolean ws = ignoreWhitespace.isSelected();
+        boolean ic = ignoreCase.isSelected();
+        setBusy(true);
+
+        new SwingWorker<DataDiffService.Result, String>() {
+            @Override
+            protected DataDiffService.Result doInBackground() throws Exception {
+                return DataDiffService.compare(leftSpec, rightSpec, ws, ic, message -> publish(message.trim()));
+            }
+
+            @Override
+            protected void process(List<String> messages) {
+                statusLabel.setText(messages.get(messages.size() - 1));
+            }
+
+            @Override
+            protected void done() {
+                setBusy(false);
+                try {
+                    showDataResult(get());
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    statusLabel.setText("Błąd: " + cause.getMessage());
+                    JOptionPane.showMessageDialog(SchemaDiffWindow.this, cause.getMessage(), "Błąd porównania słowników", JOptionPane.ERROR_MESSAGE);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }.execute();
+    }
+
+    private void showDataResult(DataDiffService.Result newResult) {
+        showView(true);
+        dataPanel.showResult(newResult);
+        Map<ModuleComparer.Status, Integer> counts = newResult.counts();
+        statusLabel.setText(String.format("Słowniki %s ↔ %s: różni się %d, tylko lewa %d, tylko prawa %d. Raport: %s", newResult.leftLabel, newResult.rightLabel, counts.getOrDefault(ModuleComparer.Status.DIFFERENT, 0), counts.getOrDefault(ModuleComparer.Status.ONLY_LEFT, 0), counts.getOrDefault(ModuleComparer.Status.ONLY_RIGHT, 0), newResult.reportFile));
+        updateResultButtons();
+    }
+
+    private void showDataSummary(String text) {
+        if (dataView) summaryLabel.setText(text);
+    }
+
+    /** Przelacza srodek okna miedzy porownaniem obiektow a porownaniem slownikow. */
+    private void showView(boolean data) {
+        dataView = data;
+        centerCards.show(centerPanel, data ? CARD_DATA : CARD_MODULES);
+        folderCompareButton.setVisible(!data);
+        summaryLabel.setText(" ");
     }
 
     // endregion
@@ -528,7 +607,7 @@ public class SchemaDiffWindow extends JFrame {
         }
 
         statusLabel.setText("Przygotowano wdrożenie " + plan.files.size() + " plików na " + plan.environment + ".");
-        JOptionPane.showMessageDialog(this, "Zapisano " + DeploymentPreparer.SCRIPTS_FILE + " (" + plan.files.size() + " plików) i " + SchemaDiffService.TARGETS_FILE + " (aktywne: " + plan.environment + ").\n\nUruchom wdrożenie: SqlExecutor bez argumentów (w IntelliJ konfiguracja SqlExecutor\nalbo java -jar .\\target\\UpgradeDataBase-1.0-SNAPSHOT.jar).\nPotem kliknij Porównaj, żeby sprawdzić wynik.", "Wdrożenie przygotowane", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, "Zapisano " + DeploymentPreparer.SCRIPTS_FILE + " (" + plan.files.size() + " plików) i " + SchemaDiffService.TARGETS_FILE + " (aktywne: " + plan.environment + ").\n\nUruchom wdrożenie: SqlExecutor bez argumentów (w IntelliJ konfiguracja SqlExecutor\nalbo java -jar .\\target\\UpgradeDataBase-1.0-SNAPSHOT.jar).\nPotem kliknij Porównaj bazy danych, żeby sprawdzić wynik.", "Wdrożenie przygotowane", JOptionPane.INFORMATION_MESSAGE);
     }
 
     /** Wykonuje skrypty z zapisanych przed chwila scripts_paths.txt / targets.txt (jak SqlExecutor bez argumentow) z logiem na zywo. */
@@ -602,7 +681,7 @@ public class SchemaDiffWindow extends JFrame {
                     get();
                     state.setText(String.format("Zakończono: OK %d, błędy %d", okCount, errorCount));
                     state.setForeground(errorCount > 0 ? new Color(0xB00020) : new Color(0x1B7F1B));
-                    statusLabel.setText(String.format("Wdrożenie na %s: OK %d, błędy %d. Kliknij Porównaj, żeby sprawdzić wynik.", environment, okCount, errorCount));
+                    statusLabel.setText(String.format("Wdrożenie na %s: OK %d, błędy %d. Kliknij Porównaj bazy danych, żeby sprawdzić wynik.", environment, okCount, errorCount));
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     state.setText("Błąd: " + cause.getMessage());
@@ -629,7 +708,7 @@ public class SchemaDiffWindow extends JFrame {
             }
         });
 
-        if (result != null) summaryLabel.setText("Widoczne: " + table.getRowCount() + " z " + tableModel.getRowCount());
+        if (result != null && !dataView) summaryLabel.setText("Widoczne: " + table.getRowCount() + " z " + tableModel.getRowCount());
     }
 
     private boolean matchesFilter(ModuleComparer.Entry entry, String text, String type) {
@@ -885,22 +964,34 @@ public class SchemaDiffWindow extends JFrame {
         if (!busy) updateResultButtons();
     }
 
+    /** Przyciski na dole dotycza wyniku widocznego na srodku (obiekty albo slowniki). */
     private void updateResultButtons() {
-        boolean hasResult = result != null;
-        folderCompareButton.setEnabled(hasResult);
-        reportButton.setEnabled(hasResult);
-        warningsButton.setEnabled(hasResult && !result.warnings.isEmpty());
-        warningsButton.setText(hasResult ? "Ostrzeżenia (" + result.warnings.size() + ")" : "Ostrzeżenia");
+        List<String> warnings = activeWarnings();
+        folderCompareButton.setEnabled(result != null);
+        reportButton.setEnabled(activeReportFile() != null);
+        warningsButton.setEnabled(warnings != null && !warnings.isEmpty());
+        warningsButton.setText(warnings != null ? "Ostrzeżenia (" + warnings.size() + ")" : "Ostrzeżenia");
+    }
+
+    private List<String> activeWarnings() {
+        if (dataView) return dataPanel.getResult() == null ? null : dataPanel.getResult().warnings;
+        return result == null ? null : result.warnings;
+    }
+
+    private Path activeReportFile() {
+        if (dataView) return dataPanel.getResult() == null ? null : dataPanel.getResult().reportFile;
+        return result == null ? null : result.reportFile();
     }
 
     private void showWarnings() {
-        if (result == null) return;
-        JTextArea area = new JTextArea(String.join("\n", result.warnings));
+        List<String> warnings = activeWarnings();
+        if (warnings == null) return;
+        JTextArea area = new JTextArea(String.join("\n", warnings));
         area.setEditable(false);
         area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         JScrollPane scroll = new JScrollPane(area);
         scroll.setPreferredSize(new Dimension(1000, 450));
-        JOptionPane.showMessageDialog(this, scroll, "Ostrzeżenia (" + result.warnings.size() + ")", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, scroll, "Ostrzeżenia (" + warnings.size() + ")", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void browseFolder(JComboBox<String> combo) {
@@ -978,7 +1069,7 @@ public class SchemaDiffWindow extends JFrame {
         }
     }
 
-    private static String statusCaption(ModuleComparer.Status status) {
+    static String statusCaption(ModuleComparer.Status status) {
         switch (status) {
             case DIFFERENT: return "Różni się";
             case ONLY_LEFT: return "Tylko lewa";
@@ -989,7 +1080,7 @@ public class SchemaDiffWindow extends JFrame {
         }
     }
 
-    private static Color statusColor(ModuleComparer.Status status) {
+    static Color statusColor(ModuleComparer.Status status) {
         switch (status) {
             case DIFFERENT: return new Color(0xFFE2B0);
             case ONLY_LEFT: return new Color(0xCFE3FF);
