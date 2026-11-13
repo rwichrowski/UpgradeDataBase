@@ -91,6 +91,23 @@ public class SqlExecutor {
         return scriptFiles;
     }
 
+    public static List<File> resolveSingleScript(String path) {
+        List<File> scriptFiles = new ArrayList<>();
+
+        File scriptFile = new File(path);
+        if (!scriptFile.exists() && !scriptFile.isAbsolute()) {
+            scriptFile = new File("scripts", path);
+        }
+
+        if (scriptFile.exists()) {
+            scriptFiles.add(scriptFile);
+        } else {
+            System.out.println("Script file not found: " + path + " (szukano tez: " + scriptFile.getAbsolutePath() + ")");
+        }
+
+        return scriptFiles;
+    }
+
     public static void executeSqlScript(DbTarget target, File scriptFile) {
         try (Connection connection = getConnection(target);
              Statement stmt = connection.createStatement()) {
@@ -152,10 +169,12 @@ public class SqlExecutor {
     }
 
     public static void main(String[] args) {
-        String scriptsPathsFile = "scripts_paths.txt";
+        // opcjonalny 1. argument (osobny run): pojedynczy skrypt *.sql (sama nazwa szukana tez w scripts\)
+        // albo inna lista skryptow *.txt; bez argumentu - scripts_paths.txt
+        String scriptsArg = args.length > 0 ? args[0] : "scripts_paths.txt";
         String targetsFile = "targets.txt";
 
-        List<File> scripts = readScriptPaths(scriptsPathsFile);
+        List<File> scripts = scriptsArg.toLowerCase().endsWith(".sql") ? resolveSingleScript(scriptsArg) : readScriptPaths(scriptsArg);
         List<DbTarget> targets = readTargets(targetsFile);
 
         if (scripts.isEmpty()) {
